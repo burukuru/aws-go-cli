@@ -64,7 +64,7 @@ func createClient() *ec2.EC2 {
 	return ec2.New(sess)
 }
 
-func describeInstances(ec2client *ec2.EC2) ([]*string, error) {
+func describeInstances(ec2client *ec2.EC2, tagname string) ([]*string, error) {
 	d := &ec2.DescribeInstancesInput{
 		DryRun: aws.Bool(false),
 		Filters: []*ec2.Filter{
@@ -78,7 +78,7 @@ func describeInstances(ec2client *ec2.EC2) ([]*string, error) {
 			&ec2.Filter{
 				Name: aws.String("tag:Name"),
 				Values: []*string{
-					aws.String("test"),
+					aws.String(tagname),
 				},
 			},
 		},
@@ -116,7 +116,7 @@ func terminateinstances(ec2client *ec2.EC2, instanceIds []*string) {
 }
 
 func createDestroyInstance(ec2client *ec2.EC2) error {
-	describeInstances(ec2client)
+	describeInstances(ec2client, "test")
 	//////////////////////////
 	//  Creating instances  //
 	//////////////////////////
@@ -124,7 +124,7 @@ func createDestroyInstance(ec2client *ec2.EC2) error {
 
 	// Refresh instances list
 	time.Sleep(10 * time.Second)
-	instanceIds, err := describeInstances(ec2client)
+	instanceIds, err := describeInstances(ec2client, "test")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func main() {
 				Aliases: []string{"di"},
 				Usage:   "List EC2 instances in selected region",
 				Action: func(c *cli.Context) error {
-					_, err := describeInstances(ec2client)
+					_, err := describeInstances(ec2client, "test")
 					if err != nil {
 						log.Fatal(err)
 						return err
@@ -175,8 +175,15 @@ func main() {
 				Name:    "terminate-instances",
 				Aliases: []string{"ti"},
 				Usage:   "Terminate test EC2 instances",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:  "tagname",
+						Value: "test",
+						Usage: "tag:Name of EC2 instances to terminate",
+					},
+				},
 				Action: func(c *cli.Context) error {
-					instanceIds, err := describeInstances(ec2client)
+					instanceIds, err := describeInstances(ec2client, c.String("tagname"))
 					if err != nil {
 						log.Fatal(err)
 						return err

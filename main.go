@@ -2,11 +2,14 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/urfave/cli/v2"
 )
 
 func runInstances(ec2client *ec2.EC2) (*ec2.Reservation, error) {
@@ -34,7 +37,9 @@ func getInstances(r *ec2.DescribeInstancesOutput) []*string {
 	instances := []*string{}
 	for i := 0; i < len(r.Reservations); i++ {
 		id := *r.Reservations[i].Instances[0].InstanceId
+		fmt.Println(id)
 		instances = append(instances, aws.String(id))
+
 	}
 	return instances
 }
@@ -47,16 +52,19 @@ func printInstances(s []*string) {
 	}
 }
 
-func main() {
+func createClient() *ec2.EC2 {
+	var region = "us-east-1"
 	sess, err := session.NewSession(
-		&aws.Config{Region: aws.String("us-east-1")},
+		&aws.Config{Region: aws.String(region)},
 	)
 	if err != nil {
 		fmt.Println("Error creating session ", err)
-		return
+		panic(err)
 	}
-	ec2client := ec2.New(sess)
+	return ec2.New(sess)
+}
 
+func describeInstances(ec2client *ec2.EC2) ([]*string, error) {
 	d := &ec2.DescribeInstancesInput{
 		DryRun: aws.Bool(false),
 		Filters: []*ec2.Filter{
@@ -76,38 +84,125 @@ func main() {
 		},
 	}
 	reservations, err := ec2client.DescribeInstances(d)
+	if err != nil {
+		log.Fatal(err)
+	}
 	instanceIds := getInstances(reservations)
 	printInstances(instanceIds)
 
-	//////////////////////////
-	//  Creating instances  //
-	//////////////////////////
+	return instanceIds, err
+}
 
+func createInstance(ec2client *ec2.EC2) error {
 	fmt.Println("Creating new EC2 instance...")
-	_, err = runInstances(ec2client)
+	_, err := runInstances(ec2client)
 	if err != nil {
 		fmt.Println("Error creating instance ", err)
-		return
+		return err
 	}
+	return err
+}
 
-	// Refresh instances list
-	time.Sleep(10 * time.Second)
-	reservations, err = ec2client.DescribeInstances(d)
-	instanceIds = getInstances(reservations)
-	printInstances(instanceIds)
-	time.Sleep(10 * time.Second)
-
-	/////////////////////////////
-	//  Terminating instances  //
-	/////////////////////////////
-
+func terminateinstances(ec2client *ec2.EC2, instanceIds []*string) {
 	fmt.Println("Terminating test EC2 instances: ", aws.StringValueSlice(instanceIds))
 	terminateinstancesinput := &ec2.TerminateInstancesInput{
 		InstanceIds: instanceIds,
 	}
-	_, err = ec2client.TerminateInstances(terminateinstancesinput)
+	_, err := ec2client.TerminateInstances(terminateinstancesinput)
 	if err != nil {
 		fmt.Println("Error terminating instances", err)
-		return
+		panic(err)
+	}
+}
+
+func createDestroyInstance(ec2client *ec2.EC2) error {
+	describeInstances(ec2client)
+	//////////////////////////
+	//  Creating instances  //
+	//////////////////////////
+	createInstance(ec2client)
+
+	// Refresh instances list
+	time.Sleep(10 * time.Second)
+	instanceIds, err := describeInstances(ec2client)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	/////////////////////////////
+	//  Terminating instances  //
+	/////////////////////////////
+	time.Sleep(10 * time.Second)
+	terminateinstances(ec2client, instanceIds)
+
+	return err
+}
+
+func main() {
+	ec2client := createClient()
+
+	app := &cli.App{
+		Name:  "aws-go-cli",
+		Usage: "AWS CLI wrapper in Go",
+		Commands: []*cli.Command{
+			{
+				Name:    "describe-instances",
+				Aliases: []string{"di"},
+				Usage:   "List EC2 instances in selected region",
+				Action: func(c *cli.Context) error {
+					_, err := describeInstances(ec2client)
+					if err != nil {
+						log.Fatal(err)
+						return err
+					}
+					return err
+				},
+			},
+			{
+				Name:    "create-instance",
+				Aliases: []string{"ci"},
+				Usage:   "Create test EC2 instance",
+				Action: func(c *cli.Context) error {
+					err := createInstance(ec2client)
+					if err != nil {
+						log.Fatal(err)
+						return err
+					}
+					return err
+				},
+			},
+			{
+				Name:    "terminate-instances",
+				Aliases: []string{"ti"},
+				Usage:   "Terminate test EC2 instances",
+				Action: func(c *cli.Context) error {
+					instanceIds, err := describeInstances(ec2client)
+					if err != nil {
+						log.Fatal(err)
+						return err
+					}
+					terminateinstances(ec2client, instanceIds)
+					return err
+				},
+			},
+			{
+				Name:    "run-test",
+				Aliases: []string{"rt"},
+				Usage:   "Run full test cycle: create, list, terminate test instance",
+				Action: func(c *cli.Context) error {
+					err := createDestroyInstance(ec2client)
+					if err != nil {
+						log.Fatal(err)
+						return err
+					}
+					return err
+				},
+			},
+		},
+	}
+
+	err := app.Run(os.Args)
+	if err != nil {
+		log.Fatal(err)
 	}
 }

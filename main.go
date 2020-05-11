@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -44,9 +45,9 @@ func getInstances(r *ec2.DescribeInstancesOutput) []*string {
 	return instances
 }
 
-func printInstances(s []*string) {
+func printInstances(s []*string, tagkv string) {
 	if len(s) < 1 {
-		fmt.Println("No instances are running.")
+		log.Print("No running instances with specified tag \"", tagkv, "\" found.")
 	} else {
 		fmt.Println("Instances running:", aws.StringValueSlice(s))
 	}
@@ -64,7 +65,10 @@ func createClient() *ec2.EC2 {
 	return ec2.New(sess)
 }
 
-func describeInstances(ec2client *ec2.EC2, tagname string) ([]*string, error) {
+func describeInstances(ec2client *ec2.EC2, tagkv string) ([]*string, error) {
+	t := strings.Split(tagkv, "=")
+	tagkey := strings.Join([]string{"tag:", t[0]}, "")
+	tagvalue := t[1]
 	d := &ec2.DescribeInstancesInput{
 		DryRun: aws.Bool(false),
 		Filters: []*ec2.Filter{
@@ -76,9 +80,9 @@ func describeInstances(ec2client *ec2.EC2, tagname string) ([]*string, error) {
 				},
 			},
 			&ec2.Filter{
-				Name: aws.String("tag:Name"),
+				Name: aws.String(tagkey),
 				Values: []*string{
-					aws.String(tagname),
+					aws.String(tagvalue),
 				},
 			},
 		},
@@ -88,7 +92,7 @@ func describeInstances(ec2client *ec2.EC2, tagname string) ([]*string, error) {
 		log.Fatal(err)
 	}
 	instanceIds := getInstances(reservations)
-	printInstances(instanceIds)
+	printInstances(instanceIds, tagkv)
 
 	return instanceIds, err
 }
@@ -115,7 +119,7 @@ func terminateinstances(ec2client *ec2.EC2, instanceIds []*string) {
 }
 
 func createDestroyInstance(ec2client *ec2.EC2) error {
-	describeInstances(ec2client, "test")
+	describeInstances(ec2client, "Name=test")
 	//////////////////////////
 	//  Creating instances  //
 	//////////////////////////
@@ -123,7 +127,7 @@ func createDestroyInstance(ec2client *ec2.EC2) error {
 
 	// Refresh instances list
 	time.Sleep(10 * time.Second)
-	instanceIds, err := describeInstances(ec2client, "test")
+	instanceIds, err := describeInstances(ec2client, "Name=test")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -149,7 +153,7 @@ func main() {
 				Aliases: []string{"di"},
 				Usage:   "List EC2 instances in selected region",
 				Action: func(c *cli.Context) error {
-					_, err := describeInstances(ec2client, "test")
+					_, err := describeInstances(ec2client, "Name=test")
 					if err != nil {
 						log.Fatal(err)
 					}
@@ -174,15 +178,18 @@ func main() {
 				Usage:   "Terminate test EC2 instances",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
-						Name:  "tagname",
-						Value: "test",
-						Usage: "tag:Name of EC2 instances to terminate",
+						Name:  "tag",
+						Value: "Name=test",
+						Usage: "Filter tag of EC2 instances to terminate in format: `TagName=TagValue`",
 					},
 				},
 				Action: func(c *cli.Context) error {
-					instanceIds, err := describeInstances(ec2client, c.String("tagname"))
+					instanceIds, err := describeInstances(ec2client, c.String("tag"))
 					if err != nil {
 						log.Fatal(err)
+					}
+					if len(instanceIds) < 1 {
+						log.Fatal("No running instances with specified tag \"", c.String("tag"), "\" to terminate.")
 					}
 					terminateinstances(ec2client, instanceIds)
 					return err

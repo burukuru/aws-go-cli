@@ -97,8 +97,7 @@ func createInstance(ec2client *ec2.EC2) error {
 	fmt.Println("Creating new EC2 instance...")
 	_, err := runInstances(ec2client)
 	if err != nil {
-		fmt.Println("Error creating instance ", err)
-		return err
+		log.Fatal("Error creating instance ", err)
 	}
 	return err
 }
@@ -153,7 +152,6 @@ func main() {
 					_, err := describeInstances(ec2client, "test")
 					if err != nil {
 						log.Fatal(err)
-						return err
 					}
 					return err
 				},
@@ -166,7 +164,6 @@ func main() {
 					err := createInstance(ec2client)
 					if err != nil {
 						log.Fatal(err)
-						return err
 					}
 					return err
 				},
@@ -186,7 +183,6 @@ func main() {
 					instanceIds, err := describeInstances(ec2client, c.String("tagname"))
 					if err != nil {
 						log.Fatal(err)
-						return err
 					}
 					terminateinstances(ec2client, instanceIds)
 					return err
@@ -200,7 +196,6 @@ func main() {
 					err := createDestroyInstance(ec2client)
 					if err != nil {
 						log.Fatal(err)
-						return err
 					}
 					return err
 				},

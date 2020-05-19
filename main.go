@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"strings"
 	"time"
@@ -13,7 +14,26 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+func createKeypair(ec2client *ec2.EC2) (*string, error) {
+	fmt.Println("Creating new keypair")
+	rand.Seed(time.Now().UTC().UnixNano())
+	i := rand.Intn(100)
+	keypairname := fmt.Sprintf("packerKeypair%v", i)
+	input := ec2.CreateKeyPairInput{
+		KeyName: aws.String(keypairname),
+	}
+	fmt.Println("Keypair", keypairname)
+	keypair, err := ec2client.CreateKeyPair(&input)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return keypair.KeyName, err
+}
+
 func runInstances(ec2client *ec2.EC2) (*ec2.Reservation, error) {
+	// Create SSH keypairr
+	packerKeypair, err := createKeypair(ec2client)
 	instancesinput := &ec2.RunInstancesInput{
 		TagSpecifications: []*ec2.TagSpecification{
 			&ec2.TagSpecification{
@@ -21,15 +41,17 @@ func runInstances(ec2client *ec2.EC2) (*ec2.Reservation, error) {
 				Tags: []*ec2.Tag{
 					&ec2.Tag{
 						Key:   aws.String("Name"),
-						Value: aws.String("test"),
+						Value: aws.String("Packer Builder"),
 					},
 				},
 			},
 		},
 		ImageId:  aws.String("ami-0323c3dd2da7fb37d"),
+		KeyName:  packerKeypair,
 		MinCount: aws.Int64(1),
 		MaxCount: aws.Int64(1),
 	}
+	fmt.Println("Creating new EC2 instance...")
 	instances, err := ec2client.RunInstances(instancesinput)
 	return instances, err
 }
@@ -98,7 +120,6 @@ func describeInstances(ec2client *ec2.EC2, tagkv string) ([]*string, error) {
 }
 
 func createInstance(ec2client *ec2.EC2) error {
-	fmt.Println("Creating new EC2 instance...")
 	_, err := runInstances(ec2client)
 	if err != nil {
 		log.Fatal("Error creating instance ", err)
